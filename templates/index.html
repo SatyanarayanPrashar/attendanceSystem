@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face Recognition Attendance</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <script>
+        function updateRecognizedNames() {
+            fetch('/recognized_names')
+                .then(response => response.json())
+                .then(attendance => {
+                    const nameList = document.getElementById('name-list');
+                    nameList.innerHTML = Object.entries(attendance)
+                        .map(([name, status]) => `<li>${name}: ${status}</li>`)
+                        .join('');
+                });
+        }
+    
+        setInterval(updateRecognizedNames, 5000); // Update every 5 seconds
+    </script>    
+</head>
+<body>
+    <div class="container">
+        <div class="camera-feed">
+            <h2>Camera Feed</h2>
+            <img src="{{ url_for('video_feed') }}" alt="Camera Feed" id="camera">
+        </div>
+        <div class="recognized-names">
+            <h2>Attendance</h2>
+            <ul id="name-list">
+                <!-- {% for name, status in attendance.items() %} -->
+                <li class="name-tile">
+                    <p>{{ name }}:</p>
+                    <p>{{ status }}</p>
+                </li>
+                <!-- {% endfor %} -->
+            </ul>
+            <div class="controls">
+                <button id="reset-button">Reset Attendance</button>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
