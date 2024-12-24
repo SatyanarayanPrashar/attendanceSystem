@@ -17,7 +17,7 @@ def get_user_location():
     - tuple: (latitude, longitude) of the user's location.
     """
     try:
-        g = geocoder.ip('me')  # Get location based on IP address
+        g = geocoder.ip('me')
         if g.ok:
             print(g.latlng)
             return g.latlng
@@ -29,39 +29,44 @@ def get_user_location():
         return None
 
 def is_in_classroom(user_coords, classroom_coords, offset=50):
-    """
-    Check if the user is within the classroom range.
-
-    Parameters:
-    - user_coords (tuple): (latitude, longitude) of the user's location.
-    - classroom_coords (tuple): (latitude, longitude) of the classroom.
-    - offset (float): Offset range in meters.
-
-    Returns:
-    - bool: True if the user is within the classroom range, False otherwise.
-    """
     distance = geodesic(user_coords, classroom_coords).meters
     print(f"Distance to classroom: {distance:.2f} meters")
     return distance <= offset
 
-def recognize_face(model_path="models/", data_path="data/", excel_file="attendance.xlsx"):
+def load_label_map(data_path="data/"):
     """
-    Recognizes faces in real-time and marks attendance for recognized faces if within classroom location.
+    Dynamically loads label map from the dataset directory.
 
     Parameters:
-    - model_path (str): Path to the trained model files.
-    - data_path (str): Path to the face image folder.
-    - excel_file (str): Path to the Excel file for attendance.
-    """
-    # Define classroom coordinates
-    classroom_coords = (12.9719, 77.5936)
+    - data_path (str): Path to the dataset.
 
-    # Load the trained model
-    print("Loading model...")
-    eigenfaces, mean_face, projections, labels = load_model(model_path)
+    Returns:
+    - label_map (dict): Mapping of labels to user names.
+    """
+    label_map = {}
+    current_label = 0
+
+    # Iterate through directories in the dataset path
+    for folder_name in os.listdir(data_path):
+        folder_path = os.path.join(data_path, folder_name)
+        if os.path.isdir(folder_path):
+            label_map[current_label] = folder_name
+            current_label += 1
     
-    # Map label IDs to names
-    label_names = {idx: name for idx, name in enumerate(os.listdir(data_path))}
+    return label_map
+
+def recognize_face(model_path="models/face_recognition_model.keras", data_path="data/", excel_file="attendance.xlsx"):
+    # classroom_coords = (12.9719, 77.5936)
+    classroom_coords = (16.9719, 77.5936)
+
+    # Load the trained CNN model
+    print("Loading model...")
+    model = load_model(model_path)
+    print("Model loaded successfully!")
+
+    # Load the label mapping dynamically
+    label_map = load_label_map(data_path)
+    print(f"Label map loaded: {label_map}")
 
     # Initialize webcam
     cap = cv2.VideoCapture(0)
@@ -85,19 +90,17 @@ def recognize_face(model_path="models/", data_path="data/", excel_file="attendan
         for (x, y, w, h) in faces:
             # Crop and preprocess the face
             face = gray[y:y + h, x:x + w]
-            face_resized = cv2.resize(face, (64, 64)).flatten()
+            face_resized = cv2.resize(face, (200, 200))  # Match the input size of the CNN model
+            face_normalized = face_resized / 255.0  # Normalize pixel values
+            face_input = face_normalized.reshape(1, 200, 200, 1)  # Reshape for the CNN model
 
-            # Subtract the mean face
-            face_centered = face_resized - mean_face
+            # Predict using the CNN model
+            prediction = model.predict(face_input)[0]  # Assuming the model returns probabilities for each class
+            predicted_label = np.argmax(prediction)  # Get the class with the highest probability
+            print(f"Recognized label: {predicted_label}")
 
-            # Project onto eigenfaces
-            face_projection = np.dot(face_centered, eigenfaces)
-
-            # Compare with stored projections
-            distances = np.linalg.norm(projections - face_projection, axis=1)
-            closest_idx = np.argmin(distances)
-            recognized_label = labels[closest_idx]
-            recognized_name = label_names.get(recognized_label, "Unknown")
+            # Get the name based on predicted label from the dynamically loaded label map
+            recognized_name = label_map.get(predicted_label, "Unknown")
 
             # Display the result
             cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
@@ -105,9 +108,9 @@ def recognize_face(model_path="models/", data_path="data/", excel_file="attendan
 
             if recognized_name != "Unknown" and recognized_name not in recognized_faces:
                 user_coords = get_user_location()
-                if user_coords and is_in_classroom(user_coords, classroom_coords, offset=50):  # Offset in meters
+                if user_coords and is_in_classroom(user_coords, classroom_coords, offset=50):
                     # Mark as "present" for recognized faces within location range
-                    print(f"Marking {recognized_name} as present.")
+                    print("Marking attendance...")
                     mark_attendance(recognized_name, status="present", excel_file=excel_file)
                     recognized_faces.add(recognized_name)
                 else:
@@ -124,22 +127,13 @@ def recognize_face(model_path="models/", data_path="data/", excel_file="attendan
     cv2.destroyAllWindows()
 
 def mark_attendance(name, status, excel_file="attendance.xlsx"):
-    """
-    Marks attendance for the recognized person in an Excel file with status.
-
-    Parameters:
-    - name (str): Name of the recognized person.
-    - status (str): Status of attendance ("present").
-    - excel_file (str): Path to the Excel file.
-    """
-    # Check if the Excel file exists, if not, create a new one
     if not os.path.exists(excel_file):
         print(f"File {excel_file} does not exist. Creating a new file...")
         workbook = openpyxl.Workbook()
         sheet = workbook.active
         sheet.title = "Attendance"
-        sheet.append(["Name", "Date", "Time", "Status"])  # Add headers
-        workbook.save(excel_file)  # Save the new file
+        sheet.append(["Name", "Date", "Time", "Status"])
+        workbook.save(excel_file)
 
     # Open the existing Excel file
     workbook = openpyxl.load_workbook(excel_file)

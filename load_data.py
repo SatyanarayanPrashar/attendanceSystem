@@ -1,49 +1,54 @@
 import os
 import cv2
 import numpy as np
+from sklearn.model_selection import train_test_split
 
-def load_face_data(data_path="data/", image_size=(64, 64)):
+def load_data(data_path="data/", image_size=(200, 200)):
     """
-    Loads face images and their labels into a matrix and label array.
+    Loads images and labels from the dataset directory.
 
     Parameters:
-    - data_path (str): Path to the folder containing face images.
-    - image_size (tuple): The size to which images are resized (e.g., 64x64).
+    - data_path (str): Path to the dataset.
+    - image_size (tuple): Desired image size (width, height).
 
     Returns:
-    - face_matrix (numpy.ndarray): Matrix of flattened face images (num_samples x num_features).
-    - labels (list): List of labels corresponding to the faces.
-    - label_names (list): Unique names corresponding to labels.
+    - X (np.array): Array of image data.
+    - y (np.array): Array of labels.
+    - label_map (dict): Mapping of labels to user names.
     """
-    face_matrix = []
-    labels = []
-    label_names = []
-    
-    for label, person_name in enumerate(os.listdir(data_path)):
-        person_folder = os.path.join(data_path, person_name)
-        
-        if not os.path.isdir(person_folder):
-            continue
-        
-        label_names.append(person_name)
-        
-        for file in os.listdir(person_folder):
-            file_path = os.path.join(person_folder, file)
-            if file_path.endswith(".jpg"):
-                # Load the image in grayscale
-                image = cv2.imread(file_path, cv2.IMREAD_GRAYSCALE)
-                # Resize the image to the standard size
-                image_resized = cv2.resize(image, image_size)
-                # Flatten the image
-                face_matrix.append(image_resized.flatten())
-                labels.append(label)
-    
-    # Convert to NumPy arrays
-    face_matrix = np.array(face_matrix)
-    labels = np.array(labels)
-    
-    return face_matrix, labels, label_names
+    X, y = [], []
+    label_map = {}
+    current_label = 0
 
-if __name__ == "__main__":
-    data, labels, names = load_face_data()
-    print(f"Loaded {len(data)} face images for {len(names)} people.")
+    # Iterate through directories in the dataset path
+    for folder_name in os.listdir(data_path):
+        folder_path = os.path.join(data_path, folder_name)
+        if not os.path.isdir(folder_path):
+            continue
+
+        # Map folder names to labels
+        label_map[current_label] = folder_name
+        for file_name in os.listdir(folder_path):
+            file_path = os.path.join(folder_path, file_name)
+            if file_name.endswith(".jpg"):
+                # Read and preprocess image
+                image = cv2.imread(file_path, cv2.IMREAD_GRAYSCALE)
+                image = cv2.resize(image, image_size)
+                X.append(image)
+                y.append(current_label)
+        
+        current_label += 1
+
+    # Convert X to a numpy array and normalize pixel values
+    X = np.array(X).reshape(-1, image_size[0], image_size[1], 1) / 255.0  # Normalize pixel values to range [0, 1]
+    
+    # Convert y to a numpy array
+    y = np.array(y)
+    
+    return X, y, label_map
+
+# Load data and split into training and validation sets
+X, y, label_map = load_data()
+X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
+
+print(f"Data loaded. {len(X_train)} training samples and {len(X_val)} validation samples.")
